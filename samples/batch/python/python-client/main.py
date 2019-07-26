@@ -6,31 +6,57 @@
 
 from typing import List
 
+import argparse
+import json
+import os
 import logging
 import sys
 import requests
 import time
 import swagger_client as cris_client
 
+from azure.storage.blob import (
+    BlockBlobService,
+    BlobPermissions,
+)
+
+from azure.eventprocessorhost.vendor.storage.blob.sharedaccesssignature import BlobSharedAccessSignature
+
+from datetime import datetime, timedelta
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format="%(message)s")
 
 # The subscription key must be for the region that you generated the Swagger
 # client library for (see ../README.md for detailed instructions).
-SUBSCRIPTION_KEY = "<your subscription key>"
+SUBSCRIPTION_KEY = ""
 
 NAME = "Simple transcription"
 DESCRIPTION = "Simple transcription description"
 
 LOCALE = "en-US"
-RECORDINGS_BLOB_URI = "<Your SAS Uri to the recording>"
+ACCOUNT_NAME = ""
+ACCOUNT_KEY = ""
+URI_PREFIX = "https://easip.blob.core.windows.net/commoncrawl-recipe-youtubevideos-audio"
 
 # Set subscription information when doing transcription with custom models
 ADAPTED_ACOUSTIC_ID = None  # guid of a custom acoustic model
 ADAPTED_LANGUAGE_ID = None  # guid of a custom language model
 
 
-def transcribe():
+def transcribe(outfile, dir_name, file_name):
+    block_blob_service = BlockBlobService(account_name=ACCOUNT_NAME, account_key=ACCOUNT_KEY)
+    container_name = "commoncrawl-recipe-youtubevideos-audio"
+    blob_name = dir_name + '/' + file_name + '.wav' 
+    sas_url = block_blob_service.generate_blob_shared_access_signature(
+            container_name,
+            blob_name,
+            permission=BlobPermissions.READ,
+            expiry=datetime.utcnow() + timedelta(hours=1),
+            start=datetime.utcnow()
+        )
+    print(sas_url)
+    recordings_blob_uri = URI_PREFIX + '/' + blob_name + '?' + sas_url
+    print(recordings_blob_uri)
     logging.info("Starting transcription client...")
 
     # configure API key authorization: subscription_key
@@ -65,7 +91,7 @@ def transcribe():
     # https://docs.microsoft.com/azure/cognitive-services/speech-service/batch-transcription
     # for supported parameters.
     transcription_definition = cris_client.TranscriptionDefinition(
-        name=NAME, description=DESCRIPTION, locale=LOCALE, recordings_url=RECORDINGS_BLOB_URI
+        name=NAME, description=DESCRIPTION, locale=LOCALE, recordings_url=recordings_blob_uri
     )
 
     # Uncomment this block to use custom models for transcription.
@@ -108,7 +134,8 @@ def transcribe():
                     results_uri = transcription.results_urls["channel_0"]
                     results = requests.get(results_uri)
                     logging.info("Transcription succeeded. Results: ")
-                    logging.info(results.content.decode("utf-8"))
+                    with open(outfile, 'w', encoding='utf-8') as f:
+                        json.dump(results.json(), f, ensure_ascii=False, indent=4)
                 else:
                     logging.info("Transcription failed :{}.".format(transcription.status_message))
             elif transcription.status == "Running":
@@ -120,12 +147,26 @@ def transcribe():
                 "completed (this transcription): {}, {} running, {} not started yet".format(
                     completed, running, not_started))
 
-        # wait for 5 seconds
-        time.sleep(5)
+        # wait for 10 seconds
+        time.sleep(10)
 
-    input("Press any key...")
+    #input("Press any key...")
 
+
+def main(args):
+    for dir_name in os.listdir(args.audio_files_dir):
+        if not os.path.exists(os.path.join(args.output_files_dir, dir_name)):
+            os.mkdir(os.path.join(args.output_files_dir, dir_name))
+        for f_name in os.listdir(os.path.join(args.audio_files_dir, dir_name)):
+            file_name = os.path.splitext(f_name)[0]
+            outfile = os.path.join(args.output_files_dir, dir_name, file_name, ".json") 
+            transcribe(outfile, dir_name, file_name)
+        sys.exit(0)
 
 if __name__ == "__main__":
-    transcribe()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--audio_files_dir')
+    parser.add_argument('--output_files_dir')
+    args = parser.parse_args()
+    main(args)
 
