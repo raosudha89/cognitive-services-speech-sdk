@@ -20,8 +20,6 @@ from azure.storage.blob import (
     BlobPermissions,
 )
 
-from azure.eventprocessorhost.vendor.storage.blob.sharedaccesssignature import BlobSharedAccessSignature
-
 from datetime import datetime, timedelta
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format="%(message)s")
@@ -160,6 +158,8 @@ def main(args):
         for f_name in os.listdir(os.path.join(args.audio_files_dir, dir_name)):
             file_name = os.path.splitext(f_name)[0]
             outfile = os.path.join(args.output_files_dir, dir_name, file_name, ".json") 
+            if os.path.exists(outfile):
+                continue
             transcribe(outfile, dir_name, file_name)
         sys.exit(0)
 
