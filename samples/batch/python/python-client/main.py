@@ -67,19 +67,23 @@ def transcribe(outfile, dir_name, file_name):
     # create an instance of the transcription api class
     transcription_api = cris_client.CustomSpeechTranscriptionsApi(api_client=client)
 
-    # get all transcriptions for the subscription
-    transcriptions: List[cris_client.Transcription] = transcription_api.get_transcriptions()
-
     logging.info("Deleting all existing completed transcriptions.")
 
     # delete all pre-existing completed transcriptions
     # if transcriptions are still running or not started, they will not be deleted
-    for transcription in transcriptions:
-        try:
-            transcription_api.delete_transcription(transcription.id)
-        except ValueError:
-            # ignore swagger error on empty response message body: https://github.com/swagger-api/swagger-core/issues/2446
-            pass
+    while True:
+        # get all transcriptions for the subscription
+        transcriptions: List[cris_client.Transcription] = transcription_api.get_transcriptions(skip=0, take=100)
+
+        if not transcriptions:
+            break
+
+        for transcription in transcriptions:
+            try:
+                transcription_api.delete_transcription(transcription.id)
+            except ValueError:
+                # ignore swagger error on empty response message body: https://github.com/swagger-api/swagger-core/issues/2446
+                pass
 
     logging.info("Creating transcriptions.")
 
@@ -112,12 +116,13 @@ def transcribe(outfile, dir_name, file_name):
     logging.info("Checking status.")
 
     completed = False
-
+    
+    skip_value = 100
     while not completed:
         running, not_started = 0, 0
 
         # get all transcriptions for the user
-        transcriptions: List[cris_client.Transcription] = transcription_api.get_transcriptions()
+        transcriptions: List[cris_client.Transcription] = transcription_api.get_transcriptions(skip=skip_value-100, take=skip_value)
 
         # for each transcription in the list we check the status
         for transcription in transcriptions:
@@ -134,6 +139,7 @@ def transcribe(outfile, dir_name, file_name):
                     logging.info("Transcription succeeded. Results: ")
                     with open(outfile, 'w', encoding='utf-8') as f:
                         json.dump(results.json(), f, ensure_ascii=False, indent=4)
+                    skip_value += 100
                 else:
                     logging.info("Transcription failed :{}.".format(transcription.status_message))
             elif transcription.status == "Running":
@@ -161,7 +167,6 @@ def main(args):
             if os.path.exists(outfile):
                 continue
             transcribe(outfile, dir_name, file_name)
-        sys.exit(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
