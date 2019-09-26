@@ -71,17 +71,19 @@ def transcribe(outfile, dir_name, file_name):
 
     # delete all pre-existing completed transcriptions
     # if transcriptions are still running or not started, they will not be deleted
-    while True:
+    #while True:
+    if True:
         # get all transcriptions for the subscription
         transcriptions: List[cris_client.Transcription] = transcription_api.get_transcriptions(skip=0, take=100)
 
-        if not transcriptions:
-            break
+        #if not transcriptions:
+        #    break
 
         for transcription in transcriptions:
             try:
                 transcription_api.delete_transcription(transcription.id)
-            except ValueError:
+            #except ValueError:
+            except:
                 # ignore swagger error on empty response message body: https://github.com/swagger-api/swagger-core/issues/2446
                 pass
 
